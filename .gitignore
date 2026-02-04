@@ -11,5 +11,8 @@ __pycache__/
 /reports/
 /summaries/
 
+# Telemetry files
+*.ibt
+
 # OS files
 .DS_Store

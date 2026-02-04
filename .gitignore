@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Local databases
+/data/
+*.db
+
+# Generated outputs
+/reports/
+/summaries/
+
+# OS files
+.DS_Store

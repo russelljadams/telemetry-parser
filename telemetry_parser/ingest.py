@@ -9,7 +9,7 @@ from .ibt import IBTReader
 from .incident_detection import detect_events
 from .metrics import compute_lap_metrics, incident_counts, override_best_lap
 from .reporting import write_publishable_summary, write_session_report
-from .segments import segment_laps
+from .segments import detect_reset_events, segment_laps
 
 REQUIRED_CHANNELS = [
     "SessionTime",
@@ -55,6 +55,10 @@ def ingest_file(file_path: str, db_path: str, report_dir: str, summary_dir: str)
         lap_last_lap_time=channels["LapLastLapTime"],
         lap_completed=channels["LapCompleted"],
     )
+    reset_events = detect_reset_events(
+        lap=channels["Lap"],
+        lap_dist_pct=channels["LapDistPct"],
+    )
 
     metrics = compute_lap_metrics(segments)
     if "LapBestLapTime" in channels:
@@ -88,6 +92,7 @@ def ingest_file(file_path: str, db_path: str, report_dir: str, summary_dir: str)
         segments=segments,
         incidents_by_lap=incidents_by_lap,
         events=events,
+        reset_events=reset_events,
     )
     conn.close()
 

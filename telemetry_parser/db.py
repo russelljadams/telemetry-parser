@@ -5,7 +5,7 @@ from typing import Iterable, List, Optional, Sequence
 
 from .incident_detection import IncidentEvent
 from .metrics import LapMetrics
-from .segments import LapSegment
+from .segments import LapSegment, ResetEvent
 
 
 def connect(db_path: str) -> sqlite3.Connection:
@@ -61,6 +61,18 @@ def init_db(conn: sqlite3.Connection) -> None:
         );
         """
     )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS reset_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL,
+            lap_number INTEGER,
+            lap_dist_pct REAL,
+            index_in_session INTEGER,
+            FOREIGN KEY(session_id) REFERENCES sessions(id)
+        );
+        """
+    )
     conn.commit()
 
 
@@ -72,6 +84,7 @@ def insert_session(
     segments: Iterable[LapSegment],
     incidents_by_lap,
     events: Optional[Sequence[IncidentEvent]] = None,
+    reset_events: Optional[Sequence[ResetEvent]] = None,
 ) -> int:
     cur = conn.cursor()
     cur.execute(
@@ -131,6 +144,22 @@ def insert_session(
                     event.event_type,
                     event.session_time,
                     event.lap_number,
+                    event.index,
+                ),
+            )
+
+    if reset_events:
+        for event in reset_events:
+            cur.execute(
+                """
+                INSERT INTO reset_events (
+                    session_id, lap_number, lap_dist_pct, index_in_session
+                ) VALUES (?, ?, ?, ?)
+                """,
+                (
+                    session_id,
+                    event.lap_number,
+                    event.lap_dist_pct,
                     event.index,
                 ),
             )

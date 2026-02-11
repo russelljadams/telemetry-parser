@@ -4,6 +4,9 @@ from dataclasses import dataclass
 from typing import Iterable, List, Sequence
 
 
+RESET_DROP_THRESHOLD = 0.05
+
+
 @dataclass(frozen=True)
 class LapSegment:
     lap_number: int
@@ -16,6 +19,13 @@ class LapSegment:
     is_reset: bool
 
 
+@dataclass(frozen=True)
+class ResetEvent:
+    lap_number: int
+    lap_dist_pct: float
+    index: int
+
+
 def segment_laps(
     session_time: Sequence[float],
     lap: Sequence[int],
@@ -25,6 +35,8 @@ def segment_laps(
 ) -> List[LapSegment]:
     if not (len(session_time) == len(lap) == len(lap_dist_pct) == len(lap_last_lap_time) == len(lap_completed)):
         raise ValueError("All input channels must be the same length")
+    if not session_time:
+        return []
 
     segments: List[LapSegment] = []
     start_idx = 0
@@ -32,7 +44,7 @@ def segment_laps(
     last_lap_completed = int(lap_completed[0])
 
     for i in range(1, len(session_time)):
-        lap_dist_drop = lap_dist_pct[i] < lap_dist_pct[i - 1] - 0.5
+        lap_dist_drop = lap_dist_pct[i] < lap_dist_pct[i - 1] - RESET_DROP_THRESHOLD
         lap_increment = lap[i] > lap[i - 1]
 
         if lap_dist_drop or lap_increment:
@@ -76,3 +88,25 @@ def segment_laps(
         ))
 
     return segments
+
+
+def detect_reset_events(
+    lap: Sequence[int],
+    lap_dist_pct: Sequence[float],
+) -> List[ResetEvent]:
+    if not (len(lap) == len(lap_dist_pct)):
+        raise ValueError("lap and lap_dist_pct must be the same length")
+
+    resets: List[ResetEvent] = []
+    for i in range(1, len(lap)):
+        lap_dist_drop = lap_dist_pct[i] < lap_dist_pct[i - 1] - RESET_DROP_THRESHOLD
+        lap_increment = lap[i] > lap[i - 1]
+
+        if lap_dist_drop and not lap_increment:
+            resets.append(ResetEvent(
+                lap_number=int(lap[i - 1]),
+                lap_dist_pct=float(lap_dist_pct[i - 1]),
+                index=i - 1,
+            ))
+
+    return resets

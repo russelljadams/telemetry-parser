@@ -51,3 +51,30 @@ Active. Experiment in progress. Awaiting first logged sessions.
 ## Purpose
 
 Convert raw `.ibt` files into structured data, session metrics, incident detection, and actionable reports.
+
+## Daily Ingest (Feb 4, 2026 onward)
+
+Process each SFL `.ibt` file per day, generate session reports/summaries, and write a daily rollup.
+
+```
+python3 scripts/daily_ingest.py \
+  --source /media/sf_iracing \
+  --start-date 2026-02-04 \
+  --db data/telemetry.db \
+  --reports reports \
+  --summaries summaries \
+  --daily-reports reports/daily
+
+python3 scripts/build_site_data.py \
+  --db data/telemetry.db \
+  --output ../russelljadams/public/data
+```
+
+Backfill reset locations for existing sessions (optional):
+```
+python3 scripts/backfill_reset_events.py --db data/telemetry.db --start-date 2026-02-04
+```
+
+Notes:
+- This script only includes filenames matching `superformulalights324_... YYYY-MM-DD HH-MM-SS.ibt`.
+- It skips anything inside `/media/sf_iracing/2025`.

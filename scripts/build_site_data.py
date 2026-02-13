@@ -79,9 +79,9 @@ def parse_file_metadata(file_path: str) -> Tuple[str, str, bool]:
         date = match.group("date")
         return track, date, True
 
-    # Fallback: baseline filename pattern
+    # Fallback: baseline filename pattern (Porsche only — reject SFL baselines)
     bmatch = BASELINE_RE.search(name)
-    if bmatch:
+    if bmatch and "porsche9922cup" in name.lower():
         track_key = bmatch.group("track").upper()
         track = BASELINE_TRACK_MAP.get(track_key)
         if track:
@@ -327,6 +327,12 @@ def main() -> None:
         track_entry["resetHotspotsBins"] = build_bins(track_entry.get("_reset_values", []))
         track_entry.pop("_reset_values", None)
 
+    # ── Build resets-by-(track, day) lookup from daily_data ───────
+    resets_by_track_day: Dict[Tuple[str, str], int] = {}
+    for date_str, day in daily_data.items():
+        for track_name, track_entry in day.get("tracks", {}).items():
+            resets_by_track_day[(track_name, date_str)] = track_entry.get("resets", 0)
+
     # ── Track daily time-series (enhanced with p25/p75/iqr) ────────
     if has_clean:
         cur.execute(
@@ -355,16 +361,6 @@ def main() -> None:
                 continue
         lap_times_by_track_day[(track, date_str)].append(t)
 
-    # Query total timed laps (completed, non-reset, with official iRacing timing)
-    cur.execute(
-        "SELECT session_id FROM laps WHERE is_complete = 1 AND is_reset = 0 AND has_official_time = 1"
-    )
-    timed_laps_by_track_day: Dict[Tuple[str, str], int] = defaultdict(int)
-    for (session_id,) in cur.fetchall():
-        key = session_track_date.get(int(session_id))
-        if key:
-            timed_laps_by_track_day[key] += 1
-
     track_timeseries: Dict[str, List[Dict]] = defaultdict(list)
     for (track, date_str), times in sorted(lap_times_by_track_day.items()):
         if not times:
@@ -376,16 +372,18 @@ def main() -> None:
         stddev = pstdev(sorted_times) if len(sorted_times) > 1 else 0.0
         p25 = _percentile(sorted_times, 0.25)
         p75 = _percentile(sorted_times, 0.75)
-        timed_laps = timed_laps_by_track_day.get((track, date_str), len(times))
-        clean_rate = round(len(times) / timed_laps, 3) if timed_laps > 0 else 0.0
+        completed = len(times)
+        resets = resets_by_track_day.get((track, date_str), 0)
+        attempts = completed + resets
+        clean_rate = round(completed / attempts, 3) if attempts > 0 else 0.0
         track_timeseries[track].append(
             {
                 "date": date_str,
                 "bestLap": round(best, 3),
                 "medianLap": round(med, 3),
                 "stdDev": round(stddev, 3),
-                "completeLaps": len(times),
-                "timedLaps": timed_laps,
+                "completeLaps": completed,
+                "resets": resets,
                 "cleanRate": clean_rate,
                 "worstLap": round(worst, 3),
                 "p25": round(p25, 3),
@@ -472,23 +470,32 @@ def main() -> None:
             all_laps_by_track_day[key] += 1
 
     track_incidents: Dict[str, List[Dict]] = defaultdict(list)
-    all_incident_dates = set(incidents_by_track_day.keys()) | set(all_laps_by_track_day.keys())
+    all_incident_dates = (
+        set(incidents_by_track_day.keys())
+        | set(all_laps_by_track_day.keys())
+        | set(resets_by_track_day.keys())
+    )
     for track, date_str in sorted(all_incident_dates):
         counts = incidents_by_track_day.get(
             (track, date_str), {"off_track": 0, "spin": 0, "big_save": 0}
         )
-        total_events = counts["off_track"] + counts["spin"] + counts["big_save"]
-        total_laps = all_laps_by_track_day.get((track, date_str), 0)
-        if total_laps == 0 and total_events == 0:
+        resets = resets_by_track_day.get((track, date_str), 0)
+        completed_laps = all_laps_by_track_day.get((track, date_str), 0)
+        total_events = counts["off_track"] + counts["spin"] + counts["big_save"] + resets
+        attempts = completed_laps + resets
+        if attempts == 0 and total_events == 0:
             continue
-        events_per_lap = round(total_events / total_laps, 3) if total_laps > 0 else 0.0
+        events_per_lap = round(total_events / attempts, 3) if attempts > 0 else 0.0
+        resets_per_lap = round(resets / attempts, 3) if attempts > 0 else 0.0
         track_incidents[track].append({
             "date": date_str,
             "offTracks": counts["off_track"],
             "spins": counts["spin"],
             "bigSaves": counts["big_save"],
+            "resets": resets,
+            "resetsPerLap": resets_per_lap,
             "eventsPerLap": events_per_lap,
-            "totalLaps": total_laps,
+            "totalLaps": attempts,
         })
 
     # ── Session type distribution (by ISO week) ────────────────────
@@ -708,6 +715,13 @@ def main() -> None:
     }
 
     (output_root / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+
+    # Clean stale output files before writing
+    for subdir in ("daily", "tracks", "baselines"):
+        d = output_root / subdir
+        if d.exists():
+            for old_file in d.glob("*.json"):
+                old_file.unlink()
 
     # Daily files
     daily_dir = output_root / "daily"

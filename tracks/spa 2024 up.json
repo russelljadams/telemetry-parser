@@ -2,8 +2,9 @@
   "track_id": "spa",
   "min_valid_lap_time": 130.0,
   "zones": [
-    {"name": "Sector 1", "start": 0.0, "end": 0.3333},
-    {"name": "Sector 2", "start": 0.3333, "end": 0.6666},
-    {"name": "Sector 3", "start": 0.6666, "end": 1.0}
+    {"name": "Sector 1", "start": 0.0, "end": 0.20},
+    {"name": "Sector 2", "start": 0.20, "end": 0.48},
+    {"name": "Sector 3", "start": 0.48, "end": 0.78},
+    {"name": "Sector 4", "start": 0.78, "end": 1.0}
   ]
 }

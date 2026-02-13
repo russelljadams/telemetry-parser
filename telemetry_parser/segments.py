@@ -60,13 +60,12 @@ def segment_laps(
             completed_now = int(lap_completed[i])
             duration = end_time - float(session_time[start_idx])
             is_complete = completed_now > last_lap_completed or lap_increment
-            # A reset is either: (1) LapDistPct drops without lap increment
-            # (classic detection), or (2) a "completed" lap that's way too
-            # short to be real — iRacing increments the lap counter on
-            # reset, making these look like normal laps.
-            is_reset = (lap_dist_drop and not lap_increment) or (
-                lap_increment and duration < RESET_MAX_DURATION
-            )
+            # A boundary was detected (lap_dist_drop or lap_increment).
+            # Real laps are always >60s on these tracks; resets are <60s.
+            # Also trust iRacing's official lap time: if LapLastLapTime > 60s,
+            # the lap is real even if the segment duration is short (happens
+            # when a reset splits a completed lap across two segments).
+            is_reset = duration < RESET_MAX_DURATION and raw_lap_time <= RESET_MAX_DURATION
 
             has_official_time = raw_lap_time > 0.0
             if raw_lap_time <= 0.0:
@@ -119,19 +118,15 @@ def detect_reset_events(
         lap_increment = lap[i] > lap[i - 1]
 
         if lap_dist_drop or lap_increment:
-            classic_reset = lap_dist_drop and not lap_increment
-            # Check for short-duration "lap" that's really a reset
-            duration_reset = False
-            if lap_increment and session_time is not None:
+            # Only record a reset if the segment was too short to be a real lap
+            if session_time is not None:
                 duration = float(session_time[i - 1]) - float(session_time[last_boundary_idx])
-                duration_reset = duration < RESET_MAX_DURATION
-
-            if classic_reset or duration_reset:
-                resets.append(ResetEvent(
-                    lap_number=int(lap[i - 1]),
-                    lap_dist_pct=float(lap_dist_pct[i - 1]),
-                    index=i - 1,
-                ))
+                if duration < RESET_MAX_DURATION:
+                    resets.append(ResetEvent(
+                        lap_number=int(lap[i - 1]),
+                        lap_dist_pct=float(lap_dist_pct[i - 1]),
+                        index=i - 1,
+                    ))
             last_boundary_idx = i
 
     return resets

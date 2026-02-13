@@ -1,5 +1,5 @@
 {
-  "track_id": "monza full",
+  "track_id": "silverstone 2019 gp",
   "min_valid_lap_time": 100.0,
   "zones": [
     {"name": "Sector 1", "start": 0.0, "end": 0.3333},

@@ -1,6 +1,6 @@
 {
-  "track_id": "monza full",
-  "min_valid_lap_time": 100.0,
+  "track_id": "spa 2024 bike",
+  "min_valid_lap_time": 110.0,
   "zones": [
     {"name": "Sector 1", "start": 0.0, "end": 0.3333},
     {"name": "Sector 2", "start": 0.3333, "end": 0.6666},

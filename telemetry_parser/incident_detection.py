@@ -119,6 +119,20 @@ def event_counts_by_lap(events: Sequence[IncidentEvent]) -> Dict[int, int]:
     return counts
 
 
+# big_save is informational (aggressive cornering), not an actual incident.
+# Only spin and off_track disqualify a lap from being clean.
+SERIOUS_EVENT_TYPES = frozenset({"spin", "off_track"})
+
+
+def serious_event_counts_by_lap(events: Sequence[IncidentEvent]) -> Dict[int, int]:
+    """Count only spin and off_track events per lap (excludes big_save)."""
+    counts: Dict[int, int] = {}
+    for event in events:
+        if event.event_type in SERIOUS_EVENT_TYPES:
+            counts[event.lap_number] = counts.get(event.lap_number, 0) + 1
+    return counts
+
+
 def hotspot_buckets(
     events: Sequence[IncidentEvent],
     lap_dist_pct: Sequence[float],

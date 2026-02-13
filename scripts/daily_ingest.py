@@ -16,10 +16,40 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from telemetry_parser.ingest import ingest_file
 
 
+# Porsche 911 GT3 Cup — iRacing car ID is "porsche9922cup"
+# Filename format: porsche9922cup_<track> YYYY-MM-DD HH-MM-SS.ibt
 FILENAME_RE = re.compile(
+    r"(porsche9922cup_(?P<track>.+?) (?P<date>\d{4}-\d{2}-\d{2}) (?P<time>\d{2}-\d{2}-\d{2})\.ibt)",
+    re.IGNORECASE,
+)
+
+# Legacy SFL pattern — kept for archived data compatibility
+SFL_FILENAME_RE = re.compile(
     r"(superformulalights324_(?P<track>.+?) (?P<date>\d{4}-\d{2}-\d{2}) (?P<time>\d{2}-\d{2}-\d{2})\.ibt)",
     re.IGNORECASE,
 )
+
+BASELINE_RE = re.compile(
+    r"BASELINE_(?P<track>[A-Za-z]+)_(?P<month>\d{1,2})-(?P<day>\d{1,2})-(?P<year>\d{2,4})_",
+    re.IGNORECASE,
+)
+
+BASELINE_TRACK_MAP = {
+    "SPA": "spa",
+    "MONZA": "monza full",
+    "NURBURGRING": "nurburgring gp",
+    "BARCELONA": "barcelona gp",
+}
+
+# iRacing track names from filenames → normalized experiment track IDs.
+# Add entries as new tracks are driven and filenames are confirmed.
+TRACK_NAME_MAP = {
+    "spa 2024 up": "spa",
+    "monza full": "monza full",
+    # Confirm these once first IBT files are generated:
+    # "nurburgring grand prix": "nurburgring gp",
+    # "circuit de barcelona": "barcelona gp",
+}
 
 
 @dataclass
@@ -29,17 +59,46 @@ class ParsedFile:
     dt: datetime
 
 
+def normalize_track(raw_track: str) -> str:
+    """Map iRacing track names to experiment track IDs."""
+    lower = raw_track.lower().strip()
+    return TRACK_NAME_MAP.get(lower, raw_track)
+
+
 def parse_filename(path: Path) -> Optional[ParsedFile]:
+    # Try Porsche 911 GT3 Cup pattern first
     match = FILENAME_RE.search(path.name)
     if not match:
-        return None
-    track = match.group("track").strip()
-    dt_str = f"{match.group('date')} {match.group('time').replace('-', ':')}"
-    try:
-        dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
-    except ValueError:
-        return None
-    return ParsedFile(path=str(path), track=track, dt=dt)
+        # Legacy SFL pattern (archived data)
+        match = SFL_FILENAME_RE.search(path.name)
+    if match:
+        track = normalize_track(match.group("track").strip())
+        dt_str = f"{match.group('date')} {match.group('time').replace('-', ':')}"
+        try:
+            dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            return None
+        return ParsedFile(path=str(path), track=track, dt=dt)
+
+    # Fallback: baseline filename pattern (BASELINE_TRACK_M-D-YY_...)
+    bmatch = BASELINE_RE.search(path.name)
+    if bmatch:
+        track_key = bmatch.group("track").upper()
+        track = BASELINE_TRACK_MAP.get(track_key)
+        if not track:
+            return None
+        month = int(bmatch.group("month"))
+        day = int(bmatch.group("day"))
+        year = int(bmatch.group("year"))
+        if year < 100:
+            year += 2000
+        try:
+            dt = datetime(year, month, day)
+        except ValueError:
+            return None
+        return ParsedFile(path=str(path), track=track, dt=dt)
+
+    return None
 
 
 def load_existing_sessions(conn: sqlite3.Connection) -> Dict[str, int]:
@@ -99,7 +158,7 @@ def write_daily_report(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Daily ingest for SFL .ibt files")
+    parser = argparse.ArgumentParser(description="Daily ingest for Porsche 911 GT3 Cup .ibt files")
     parser.add_argument("--source", default="/media/sf_iracing", help="Root folder to scan for .ibt files")
     parser.add_argument("--start-date", required=True, help="Inclusive start date (YYYY-MM-DD)")
     parser.add_argument("--end-date", help="Exclusive end date (YYYY-MM-DD)")
@@ -151,6 +210,11 @@ def main() -> None:
             if session_id is None:
                 session_id = ingest_file(file_path, str(db_path), str(report_dir), str(summary_dir))
                 existing[file_path] = session_id
+
+            # Auto-flag sessions from baselines/ subfolder
+            if "/baselines/" in file_path.lower() or "\\baselines\\" in file_path.lower():
+                conn.execute("UPDATE sessions SET is_baseline = 1 WHERE id = ? AND is_baseline = 0", (session_id,))
+                conn.commit()
 
             rows.append((file_path, session_id, track, timestamp))
 

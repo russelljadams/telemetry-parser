@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from statistics import median, pstdev
-from typing import Dict, Iterable, List, Sequence
+from typing import Dict, Iterable, List, Optional, Sequence
 
 from .segments import LapSegment
 
@@ -18,6 +18,14 @@ class LapMetrics:
     iqr_lap: float
 
 
+@dataclass(frozen=True)
+class CleanMetrics:
+    clean_lap_count: int
+    clean_best_lap: float
+    clean_median_lap: float
+    clean_stddev_lap: float
+
+
 def _percentile(sorted_vals: Sequence[float], pct: float) -> float:
     if not sorted_vals:
         return 0.0
@@ -29,8 +37,28 @@ def _percentile(sorted_vals: Sequence[float], pct: float) -> float:
     return sorted_vals[f] + (sorted_vals[c] - sorted_vals[f]) * (k - f)
 
 
-def compute_lap_metrics(segments: Sequence[LapSegment]) -> LapMetrics:
-    lap_times = [seg.lap_time for seg in segments if seg.is_complete and seg.lap_time > 0]
+def is_valid_lap(seg: LapSegment, min_time: float = 0.0, max_time: float = 0.0) -> bool:
+    if not seg.is_complete or seg.is_reset:
+        return False
+    if not seg.has_official_time:
+        return False
+    if seg.lap_time < min_time:
+        return False
+    if max_time > 0 and seg.lap_time > max_time:
+        return False
+    return True
+
+
+def compute_lap_metrics(
+    segments: Sequence[LapSegment],
+    min_valid_lap_time: float = 0.0,
+    max_valid_lap_time: float = 0.0,
+) -> LapMetrics:
+    lap_times = [
+        seg.lap_time
+        for seg in segments
+        if is_valid_lap(seg, min_valid_lap_time, max_valid_lap_time)
+    ]
     lap_times_sorted = sorted(lap_times)
 
     if not lap_times_sorted:
@@ -50,17 +78,38 @@ def compute_lap_metrics(segments: Sequence[LapSegment]) -> LapMetrics:
     )
 
 
+def compute_clean_metrics(
+    segments: Sequence[LapSegment],
+    min_valid_lap_time: float = 0.0,
+    max_valid_lap_time: float = 0.0,
+    incidents_by_lap: Optional[Dict[int, int]] = None,
+    events_by_lap: Optional[Dict[int, int]] = None,
+) -> CleanMetrics:
+    """Compute metrics for real, driven laps. Incidents and events are tracked
+    separately but do NOT exclude a lap — they're part of real pace data."""
+    clean_times = []
+    for seg in segments:
+        if not is_valid_lap(seg, min_valid_lap_time, max_valid_lap_time):
+            continue
+        clean_times.append(seg.lap_time)
+    clean_times.sort()
+    if not clean_times:
+        return CleanMetrics(0, 0.0, 0.0, 0.0)
+    return CleanMetrics(
+        clean_lap_count=len(clean_times),
+        clean_best_lap=min(clean_times),
+        clean_median_lap=median(clean_times),
+        clean_stddev_lap=pstdev(clean_times) if len(clean_times) > 1 else 0.0,
+    )
+
+
 def override_best_lap(metrics: LapMetrics, best_lap_time: float) -> LapMetrics:
     if best_lap_time <= 0:
         return metrics
-    if metrics.best_lap and metrics.best_lap > 0:
-        best = min(metrics.best_lap, best_lap_time)
-    else:
-        best = best_lap_time
     return LapMetrics(
         lap_count=metrics.lap_count,
         complete_lap_count=metrics.complete_lap_count,
-        best_lap=best,
+        best_lap=best_lap_time,
         median_lap=metrics.median_lap,
         worst_lap=metrics.worst_lap,
         stddev_lap=metrics.stddev_lap,
@@ -69,15 +118,23 @@ def override_best_lap(metrics: LapMetrics, best_lap_time: float) -> LapMetrics:
 
 
 def incident_counts(player_incidents: Sequence[int], segments: Sequence[LapSegment]) -> Dict[int, int]:
-    """Returns incident delta per lap number."""
+    """Returns incident count per lap number.
+
+    PlayerIncidents is a pulse/flag channel: it spikes to 1 or 2 for a single
+    tick then immediately returns to 0.  We count rising edges (0→N transitions)
+    within each segment's index range and sum the incident values.
+    """
     incidents_by_lap: Dict[int, int] = {}
     if not player_incidents:
         return incidents_by_lap
 
-    last_inc = int(player_incidents[0])
     for seg in segments:
-        end_inc = int(player_incidents[seg.end_idx])
-        incidents_by_lap[seg.lap_number] = max(0, end_inc - last_inc)
-        last_inc = end_inc
+        total = 0
+        for i in range(seg.start_idx, min(seg.end_idx + 1, len(player_incidents))):
+            val = int(player_incidents[i])
+            prev = int(player_incidents[i - 1]) if i > 0 else 0
+            if val > 0 and prev == 0:
+                total += val
+        incidents_by_lap[seg.lap_number] = total
 
     return incidents_by_lap

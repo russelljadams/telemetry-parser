@@ -76,10 +76,12 @@ def main() -> None:
         channels = {
             "Lap": reader.read_channel("Lap"),
             "LapDistPct": reader.read_channel("LapDistPct"),
+            "SessionTime": reader.read_channel("SessionTime"),
         }
         reset_events = detect_reset_events(
             lap=channels["Lap"],
             lap_dist_pct=channels["LapDistPct"],
+            session_time=channels["SessionTime"],
         )
         for event in reset_events:
             cur.execute(

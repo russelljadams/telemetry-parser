@@ -15,19 +15,19 @@ GLOBAL_MAX_LAP_TIME = 600.0  # 10 minutes — no real lap takes this long
 # NOTE: These are estimates for the 911 Cup Car. Adjust once real data is collected.
 # The Cup Car is slower than SFL — expect ~2:20-2:30 at Spa vs ~2:15 in SFL.
 DEFAULT_MIN_TIMES: Dict[str, float] = {
-    "spa": 130.0,
-    "spa 2024 up": 130.0,
+    "spa": 135.0,
+    "spa 2024 up": 135.0,
     "monza full": 105.0,
     "nurburgring gp": 115.0,
     "barcelona gp": 110.0,
 }
 
 DEFAULT_MAX_TIMES: Dict[str, float] = {
-    "spa": 180.0,
-    "spa 2024 up": 180.0,
-    "monza full": 140.0,
-    "nurburgring gp": 160.0,
-    "barcelona gp": 155.0,
+    "spa": 146.0,
+    "spa 2024 up": 146.0,
+    "monza full": 130.0,
+    "nurburgring gp": 150.0,
+    "barcelona gp": 145.0,
 }
 
 

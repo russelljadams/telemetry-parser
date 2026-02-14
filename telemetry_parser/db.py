@@ -4,7 +4,7 @@ import sqlite3
 from typing import Dict, Iterable, List, Optional, Sequence
 
 from .incident_detection import IncidentEvent, event_counts_by_lap, serious_event_counts_by_lap
-from .metrics import CleanMetrics, LapMetrics, is_valid_lap
+from .metrics import CleanMetrics, LapMetrics, is_clean_lap, is_valid_lap
 from .segments import LapSegment, ResetEvent
 
 
@@ -167,20 +167,14 @@ def insert_session(
 
     # Count all events per lap (for informational tracking)
     all_events_per_lap: Dict[int, int] = {}
-    # Count only serious events (spin, off_track) for clean determination
-    serious_per_lap: Dict[int, int] = {}
     if events:
         all_events_per_lap = event_counts_by_lap(events)
-        serious_per_lap = serious_event_counts_by_lap(events)
 
     for seg in segments_list:
         inc = incidents_by_lap.get(seg.lap_number, 0)
         evt = all_events_per_lap.get(seg.lap_number, 0)
-        # A lap is "clean" = a real, complete lap the driver actually drove.
-        # Incidents and events are tracked but do NOT exclude a lap —
-        # they're part of the driver's real pace and belong in variance metrics.
-        # Only structural issues exclude: incomplete, reset, untimed, AFK.
-        clean = 1 if is_valid_lap(seg, min_valid_lap_time, max_valid_lap_time) else 0
+        # Clean = any valid lap within the time bounds
+        clean = 1 if is_clean_lap(seg, min_valid_lap_time, max_valid_lap_time) else 0
         cur.execute(
             """
             INSERT INTO laps (

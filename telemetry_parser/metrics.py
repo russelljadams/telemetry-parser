@@ -78,6 +78,43 @@ def compute_lap_metrics(
     )
 
 
+def identify_outlaps(
+    segments: Sequence[LapSegment],
+    min_valid_lap_time: float = 0.0,
+    max_valid_lap_time: float = 0.0,
+) -> set:
+    """Return lap numbers of outlaps (first valid lap on cold tyres).
+
+    After a reset, the driver often does an untimed recovery lap back to the
+    S/F line. That recovery lap warms the tyres, so the next valid lap is NOT
+    an outlap. Only flag the first valid lap as outlap when no full-length
+    warmup lap preceded it.
+    """
+    from .segments import RESET_MAX_DURATION
+
+    outlap_laps: set = set()
+    need_outlap = True  # first valid lap is always an outlap
+    for seg in segments:
+        if seg.is_reset:
+            need_outlap = True
+        elif seg.is_complete and seg.lap_time > RESET_MAX_DURATION:
+            # A full-length driven lap — tyres are warm after this
+            if need_outlap and is_valid_lap(seg, min_valid_lap_time, max_valid_lap_time):
+                # First valid lap and tyres were cold → outlap
+                outlap_laps.add(seg.lap_number)
+            need_outlap = False
+    return outlap_laps
+
+
+def is_clean_lap(
+    seg: LapSegment,
+    min_time: float = 0.0,
+    max_time: float = 0.0,
+) -> bool:
+    """A clean lap is any valid lap within the time bounds."""
+    return is_valid_lap(seg, min_time, max_time)
+
+
 def compute_clean_metrics(
     segments: Sequence[LapSegment],
     min_valid_lap_time: float = 0.0,
@@ -85,11 +122,10 @@ def compute_clean_metrics(
     incidents_by_lap: Optional[Dict[int, int]] = None,
     events_by_lap: Optional[Dict[int, int]] = None,
 ) -> CleanMetrics:
-    """Compute metrics for real, driven laps. Incidents and events are tracked
-    separately but do NOT exclude a lap — they're part of real pace data."""
+    """Compute metrics for clean laps: any valid lap within the time bounds."""
     clean_times = []
     for seg in segments:
-        if not is_valid_lap(seg, min_valid_lap_time, max_valid_lap_time):
+        if not is_clean_lap(seg, min_valid_lap_time, max_valid_lap_time):
             continue
         clean_times.append(seg.lap_time)
     clean_times.sort()

@@ -1,6 +1,6 @@
 {
   "track_id": "spa",
-  "min_valid_lap_time": 130.0,
+  "min_valid_lap_time": 135.0,
   "zones": [
     {"name": "Sector 1", "start": 0.0, "end": 0.20},
     {"name": "Sector 2", "start": 0.20, "end": 0.48},
